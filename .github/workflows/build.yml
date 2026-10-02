@@ -1,0 +1,72 @@
+name: "Build begonia kernel (latest KernelSU-Next)"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v4
+
+      - name: "Install prerequisites"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libfl-dev \
+            curl git wget zip unzip libarchive-tools python3 ccache
+
+      - name: "Clone kernel source (Power / Saikrishna1504)"
+        run: |
+          git clone --recursive --depth=1 -j"$(nproc)" --branch bka \
+            https://github.com/Saikrishna1504/kernel_xiaomi_mt6785 kernel
+
+      - name: "Get toolchain (crDroid clang r547379)"
+        run: |
+          git clone --depth=1 -j"$(nproc)" --branch 15.0 \
+            https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r547379 clang
+          echo "$PWD/clang/bin" >> "$GITHUB_PATH"
+
+      - name: "Integrate KernelSU-Next (latest tag automatically)"
+        working-directory: kernel
+        run: |
+          curl -sL "https://raw.githubusercontent.com/cvnertnc/Begonia-Kernel-Builder/main/.github/script/ksun.sh" -o ksun.sh
+          chmod +x ksun.sh
+          ./ksun.sh
+          echo "=== KernelSU-Next version ==="
+          git -C KernelSU describe --tags || true
+          echo "=== enable KSU in defconfig ==="
+          grep -q "^CONFIG_KSU=y" arch/arm64/configs/begonia_user_defconfig || \
+            echo "CONFIG_KSU=y" >> arch/arm64/configs/begonia_user_defconfig
+
+      - name: "Make defconfig"
+        working-directory: kernel
+        run: |
+          make -j"$(nproc)" O="$PWD/../out" ARCH=arm64 \
+            CC=clang CROSS_COMPILE="$PWD/../clang/bin/aarch64-linux-gnu-" \
+            CROSS_COMPILE_ARM32="$PWD/../clang/bin/arm-linux-gnueabi-" \
+            LD="$PWD/../clang/bin/ld.lld" LLVM=1 LLVM_IAS=1 \
+            begonia_user_defconfig
+
+      - name: "Build kernel"
+        working-directory: kernel
+        run: |
+          make -j"$(nproc)" O="$PWD/../out" ARCH=arm64 \
+            CC=clang CROSS_COMPILE="$PWD/../clang/bin/aarch64-linux-gnu-" \
+            CROSS_COMPILE_ARM32="$PWD/../clang/bin/arm-linux-gnueabi-" \
+            LD="$PWD/../clang/bin/ld.lld" LLVM=1 LLVM_IAS=1
+
+      - name: "Package with AnyKernel3"
+        run: |
+          git clone --depth=1 -j"$(nproc)" --branch begonia \
+            https://github.com/cvnertnc/AnyKernel3 AnyKernel3
+          cp -f out/arch/arm64/boot/Image.gz AnyKernel3/
+          cd AnyKernel3
+          zip -q -r "../begonia-KernelSU-Next-$(date +%Y%m%d).zip" *
+
+      - name: "Upload kernel zip"
+        uses: actions/upload-artifact@v4
+        with:
+          name: begonia-KernelSU-Next-kernel
+          path: begonia-KernelSU-Next-*.zip
