@@ -19,7 +19,7 @@ jobs:
 
       - name: "Clone kernel source (Power / Saikrishna1504)"
         run: |
-          git clone --recursive --depth=1 -j"$(nproc)" --branch bka \
+          git clone --recursive --depth=1 -j"$(nproc)" --branch main \
             https://github.com/Saikrishna1504/kernel_xiaomi_mt6785 kernel
 
       - name: "Get toolchain (crDroid clang r547379)"
